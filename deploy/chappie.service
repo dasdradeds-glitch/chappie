@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# runit run-script (termux-services). Copiado pelo bootstrap.sh pra
+# $PREFIX/var/service/chappie/run. Nome ".service" e so pra familiaridade —
+# Termux nao tem systemd, isso e runit de verdade (ver HANDOFF v2 §1).
+cd "$HOME/chappie" || exit 1
+set -a
+[ -f ./.env ] && . ./.env
+set +a
+exec ./.venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port "${PORT:-8000}" 2>&1

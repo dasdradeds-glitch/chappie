@@ -61,3 +61,69 @@ def test_renderer_index_served_at_root(tmp_path, monkeypatch):
         assert "Chappie" in resp.text
         assert client.get("/assets/face_math.js").status_code == 200
         assert client.get("/assets/app.js").status_code == 200
+
+
+def test_admin_update_disabled_without_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(config, "ADMIN_TOKEN", "")
+
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        resp = client.post("/admin/update", headers={"X-Admin-Token": "qualquer-coisa"})
+        assert resp.status_code == 403
+
+
+def test_admin_update_rejects_wrong_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(config, "ADMIN_TOKEN", "segredo-certo")
+
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        resp = client.post("/admin/update", headers={"X-Admin-Token": "chute-errado"})
+        assert resp.status_code == 403
+
+
+def test_admin_update_pulls_and_schedules_restart(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(config, "ADMIN_TOKEN", "segredo-certo")
+
+    import server.main as main
+
+    class FakeCompletedProcess:
+        returncode = 0
+        stdout = "Already up to date."
+        stderr = ""
+
+    restart_calls = []
+    monkeypatch.setattr(main.subprocess, "run", lambda *a, **kw: FakeCompletedProcess())
+    monkeypatch.setattr(main, "_schedule_restart", lambda *a, **kw: restart_calls.append(True))
+
+    with TestClient(main.app) as client:
+        resp = client.post("/admin/update", headers={"X-Admin-Token": "segredo-certo"})
+        assert resp.status_code == 200
+        assert resp.json()["pulled"] == "Already up to date."
+        assert restart_calls == [True]
+
+
+def test_admin_update_returns_500_on_git_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+    monkeypatch.setattr(config, "ADMIN_TOKEN", "segredo-certo")
+
+    import server.main as main
+
+    class FakeFailedProcess:
+        returncode = 1
+        stdout = ""
+        stderr = "conflito de merge"
+
+    monkeypatch.setattr(main.subprocess, "run", lambda *a, **kw: FakeFailedProcess())
+
+    with TestClient(main.app) as client:
+        resp = client.post("/admin/update", headers={"X-Admin-Token": "segredo-certo"})
+        assert resp.status_code == 500

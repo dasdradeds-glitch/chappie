@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -152,3 +154,29 @@ async def face_ws(ws: WebSocket):
             await asyncio.sleep(dt)
     except WebSocketDisconnect:
         pass
+
+
+def _schedule_restart(delay_s: float = 1.0) -> None:
+    """So sai do processo — quem sobe de novo e o supervisor runit
+    (deploy/chappie.service), ja lendo o codigo atualizado do git pull."""
+    asyncio.get_event_loop().call_later(delay_s, lambda: os._exit(0))
+
+
+@app.post("/admin/update")
+async def admin_update(request: Request):
+    """git pull + restart remoto (HANDOFF §5). So funciona com
+    CHAPPIE_ADMIN_TOKEN configurado; sem token, o endpoint fica desativado.
+    So faz pull de codigo — deps novas exigem `bash deploy/update.sh`."""
+    if not config.ADMIN_TOKEN or request.headers.get("X-Admin-Token", "") != config.ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="token invalido ou admin desabilitado")
+
+    result = subprocess.run(
+        ["git", "-C", str(config.REPO_ROOT), "pull", "--ff-only"],
+        capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"git pull falhou: {result.stderr[:500]}")
+
+    _persist_now()
+    _schedule_restart()
+    return {"pulled": result.stdout.strip(), "restarting_in_s": 1}
