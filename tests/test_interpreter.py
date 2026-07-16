@@ -173,3 +173,98 @@ async def test_interpret_forces_tool_choice(monkeypatch):
 
     assert captured["tool_choice"] == {"type": "tool", "name": "emit_response"}
     assert captured["tools"][0]["name"] == "emit_response"
+
+
+# ---------- interpret_initiative (fala espontanea) ----------
+
+@pytest.mark.asyncio
+async def test_interpret_initiative_mock_mode_uses_deterministic_lines(monkeypatch):
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", True)
+    result = await interpreter.interpret_initiative({}, [])
+    assert result is not None
+    assert result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_interpret_initiative_no_api_key_returns_none(monkeypatch):
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
+    monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "")
+    result = await interpreter.interpret_initiative({}, [])
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_interpret_initiative_api_failure_returns_none_not_fallback(monkeypatch):
+    """Diferente de interpret(): ninguem perguntou nada, entao uma falha
+    aqui tem que ser None (skip silencioso), nunca o FALLBACK textual
+    ('Interferencia no sinal') — nao faz sentido anunciar isso do nada."""
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
+    monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            raise TimeoutError("simulated timeout")
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(interpreter, "_get_client", lambda: FakeClient())
+    result = await interpreter.interpret_initiative({"cortisol": 0.25}, [])
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_interpret_initiative_valid_tool_use_response(monkeypatch):
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
+    monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
+
+    class FakeToolUseBlock:
+        type = "tool_use"
+        name = "emit_response"
+        input = {"impulses": {"oxytocin": 0.2}, "reply": "Cadê você? Fiquei pensando aqui."}
+
+    class FakeResponse:
+        content = [FakeToolUseBlock()]
+        stop_reason = "tool_use"
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(interpreter, "_get_client", lambda: FakeClient())
+    result = await interpreter.interpret_initiative({"cortisol": 0.25}, [])
+    assert result == {"impulses": {"oxytocin": 0.2}, "reply": "Cadê você? Fiquei pensando aqui."}
+
+
+@pytest.mark.asyncio
+async def test_interpret_initiative_forces_tool_choice_and_appends_marker(monkeypatch):
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
+    monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
+
+    captured = {}
+
+    class FakeToolUseBlock:
+        type = "tool_use"
+        name = "emit_response"
+        input = {"impulses": {}, "reply": "oi"}
+
+    class FakeResponse:
+        content = [FakeToolUseBlock()]
+        stop_reason = "tool_use"
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(interpreter, "_get_client", lambda: FakeClient())
+    await interpreter.interpret_initiative({"cortisol": 0.25}, [{"role": "user", "content": "oi"}])
+
+    assert captured["tool_choice"] == {"type": "tool", "name": "emit_response"}
+    assert captured["messages"][-1] == {"role": "user", "content": interpreter.INITIATIVE_MARKER}

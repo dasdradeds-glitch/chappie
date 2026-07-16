@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
 import subprocess
 import time
 from contextlib import asynccontextmanager
@@ -16,13 +17,15 @@ from fastapi.staticfiles import StaticFiles
 
 from . import config, persistence
 from .engine import Engine
-from .interpreter import interpret
+from .interpreter import interpret, interpret_initiative
 from .schemas import NeuroSnapshot, SayRequest, SayResponse
 from .tts import synthesize
 
 logger = logging.getLogger("chappie")
 
 RENDERER_DIR = config.REPO_ROOT / "renderer"
+
+INITIATIVE_HISTORY_MARKER = "[silêncio prolongado]"
 
 state: dict = {
     "engine": None,
@@ -31,6 +34,12 @@ state: dict = {
     "startup_error": None,
     "started_at": None,
     "tick_task": None,
+    "initiative_task": None,
+    "ws_clients": 0,
+    "last_interaction_at": 0.0,
+    "initiative_threshold_s": 0.0,
+    "pending_initiative": None,
+    "initiative_seq": 0,
 }
 
 
@@ -68,26 +77,76 @@ async def _tick_loop() -> None:
         await asyncio.sleep(dt)
 
 
+def _roll_initiative_threshold() -> float:
+    return random.uniform(config.INITIATIVE_MIN_S, config.INITIATIVE_MAX_S)
+
+
+async def _maybe_fire_initiative() -> None:
+    """Decide se o Chappie puxa assunto sozinho (pedido do Jack 16/07): so
+    dispara com pelo menos 1 cliente WS conectado e depois de um silencio
+    >= limiar sorteado (reamostrado a cada disparo — pausa nunca fixa).
+    Extraida do loop pra ser testavel direto, sem esperar wall-clock real."""
+    if state["ws_clients"] <= 0 or not state["startup_ok"]:
+        return
+    if time.monotonic() - state["last_interaction_at"] < state["initiative_threshold_s"]:
+        return
+
+    eng = state["engine"]
+    result = await interpret_initiative(eng.chem, state["history"])
+    state["last_interaction_at"] = time.monotonic()
+    state["initiative_threshold_s"] = _roll_initiative_threshold()
+    if result is None:
+        return
+
+    eng.apply_impulses(result["impulses"])
+    state["history"].append({"role": "user", "content": INITIATIVE_HISTORY_MARKER})
+    state["history"].append({"role": "assistant", "content": result["reply"]})
+    max_msgs = config.HISTORY_MAX_TURNS * 2
+    if len(state["history"]) > max_msgs:
+        state["history"] = state["history"][-max_msgs:]
+
+    word_count = len(result["reply"].split())
+    eng.start_speaking(word_count / 2.5 + 0.3)
+
+    state["initiative_seq"] += 1
+    state["pending_initiative"] = {"id": state["initiative_seq"], "text": result["reply"]}
+
+
+async def _initiative_loop() -> None:
+    if not config.INITIATIVE_ENABLED:
+        return
+    while True:
+        await asyncio.sleep(config.INITIATIVE_POLL_S)
+        await _maybe_fire_initiative()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine, history = _load_engine_and_history()
     state["engine"] = engine
     state["history"] = history
     state["started_at"] = time.time()
+    state["last_interaction_at"] = time.monotonic()
+    state["initiative_threshold_s"] = _roll_initiative_threshold()
+    state["pending_initiative"] = None
+    state["ws_clients"] = 0
     ok, err = _self_check()
     state["startup_ok"] = ok
     state["startup_error"] = err
     if not ok:
         logger.warning("self-check falhou no boot: %s", err)
     state["tick_task"] = asyncio.create_task(_tick_loop())
+    state["initiative_task"] = asyncio.create_task(_initiative_loop())
     try:
         yield
     finally:
-        state["tick_task"].cancel()
-        try:
-            await state["tick_task"]
-        except (asyncio.CancelledError, Exception):
-            pass
+        for task_key in ("tick_task", "initiative_task"):
+            task = state[task_key]
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
         _persist_now()
 
 
@@ -142,6 +201,10 @@ async def say(req: SayRequest):
     word_count = len(result["reply"].split())
     eng.start_speaking(word_count / 2.5 + 0.3)
 
+    # Interacao real empurra a proxima fala espontanea pra frente (nao faz
+    # sentido puxar assunto sozinho logo depois de uma conversa de verdade).
+    state["last_interaction_at"] = time.monotonic()
+
     return SayResponse(reply=result["reply"], impulses=result["impulses"])
 
 
@@ -156,13 +219,22 @@ async def tts(req: SayRequest):
 @app.websocket("/face")
 async def face_ws(ws: WebSocket):
     await ws.accept()
+    state["ws_clients"] += 1
     dt = 1.0 / config.TICK_HZ
     try:
         while True:
-            await ws.send_json(state["engine"].face_state())
+            payload = state["engine"].face_state()
+            # "initiative" nao faz parte do contrato FaceState (HANDOFF §3) —
+            # e um extra pro cliente detectar fala espontanea por mudanca de
+            # id, nunca validado contra FaceStateModel (extra="forbid" e so
+            # pro shape puro do engine, ver tests/test_contract.py).
+            payload["initiative"] = state["pending_initiative"]
+            await ws.send_json(payload)
             await asyncio.sleep(dt)
     except WebSocketDisconnect:
         pass
+    finally:
+        state["ws_clients"] -= 1
 
 
 def _schedule_restart(delay_s: float = 1.0) -> None:

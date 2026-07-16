@@ -19,6 +19,11 @@ logger = logging.getLogger("chappie")
 
 FALLBACK = {"impulses": {}, "reply": "Interferência no sinal."}
 
+# Marca sintetica que o initiative loop manda como "fala do usuario" — sinaliza
+# pro Claude que ninguem falou, e ele esta puxando assunto por conta propria
+# (ver persona.INITIATIVE_NUDGE, que explica essa marca no system prompt).
+INITIATIVE_MARKER = "[silêncio prolongado — ninguém falou, mas você pode puxar assunto se quiser]"
+
 EMIT_TOOL = {
     "name": "emit_response",
     "description": "Emite a fala do Chappie e os impulsos químicos que ele sentiu ao responder.",
@@ -33,7 +38,7 @@ EMIT_TOOL = {
             },
             "reply": {
                 "type": "string",
-                "description": "Fala do Chappie em pt-BR, curta (máx 25 palavras).",
+                "description": "Fala do Chappie em pt-BR, curta e direta (máx 35 palavras), com uma opinião ou imagem específica — nunca morna ou genérica.",
             },
         },
         "required": ["impulses", "reply"],
@@ -122,3 +127,49 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
             getattr(resp, "stop_reason", None), block_types, resp.content,
         )
         return dict(FALLBACK)
+
+
+async def interpret_initiative(chem: dict, history: list[dict]) -> dict | None:
+    """Fala espontanea (HANDOFF pos-16/07: 'iniciativa'). Diferente de
+    interpret(): ninguem perguntou nada, entao falha vira None (skip
+    silencioso) em vez de FALLBACK — nao faz sentido Chappie anunciar
+    'interferencia no sinal' do nada, sem pergunta pra responder."""
+    if config.MOCK_LLM:
+        from dev.mock_llm import mock_initiative
+        return mock_initiative()
+
+    if not config.ANTHROPIC_API_KEY:
+        return None
+
+    system = "\n\n".join([
+        persona.SYSTEM_PROMPT,
+        persona.REPLY_GUIDANCE,
+        persona.build_state_context(chem),
+        persona.INITIATIVE_NUDGE,
+    ])
+
+    try:
+        client = _get_client()
+        resp = await client.messages.create(
+            model=config.MODEL,
+            max_tokens=1024,
+            system=system,
+            messages=build_messages(history, INITIATIVE_MARKER),
+            tools=[EMIT_TOOL],
+            tool_choice={"type": "tool", "name": "emit_response"},
+            timeout=15.0,
+        )
+    except Exception:
+        logger.exception("chamada de iniciativa a API da Anthropic falhou (model=%s)", config.MODEL)
+        return None
+
+    try:
+        tool_block = next(b for b in resp.content if getattr(b, "type", None) == "tool_use")
+        return validate_parsed(tool_block.input)
+    except Exception:
+        block_types = [getattr(b, "type", type(b).__name__) for b in resp.content]
+        logger.exception(
+            "extrair tool_use da iniciativa falhou | stop_reason=%s | block_types=%s | content=%r",
+            getattr(resp, "stop_reason", None), block_types, resp.content,
+        )
+        return None

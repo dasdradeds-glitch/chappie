@@ -25,3 +25,12 @@ ADMIN_TOKEN = os.environ.get("CHAPPIE_ADMIN_TOKEN", "")
 TTS_VOICE = os.environ.get("CHAPPIE_TTS_VOICE", "pt-BR-AntonioNeural")
 TTS_RATE = os.environ.get("CHAPPIE_TTS_RATE", "-8%")
 TTS_PITCH = os.environ.get("CHAPPIE_TTS_PITCH", "-4Hz")
+
+# Iniciativa (16/07, pedido do Jack): Chappie puxa assunto sozinho depois de
+# um tempo em silencio, com pausa variavel (nao cadencia fixa) — sorteada de
+# novo a cada disparo entre MIN e MAX segundos, so dispara com pelo menos um
+# cliente WS conectado (ninguem ouviria do contrario).
+INITIATIVE_ENABLED = os.environ.get("CHAPPIE_INITIATIVE_ENABLED", "1") == "1"
+INITIATIVE_MIN_S = float(os.environ.get("CHAPPIE_INITIATIVE_MIN_S", "90"))
+INITIATIVE_MAX_S = float(os.environ.get("CHAPPIE_INITIATIVE_MAX_S", "300"))
+INITIATIVE_POLL_S = float(os.environ.get("CHAPPIE_INITIATIVE_POLL_S", "5"))

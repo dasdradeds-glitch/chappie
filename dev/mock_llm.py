@@ -3,6 +3,8 @@ API e sem rede. Usado quando MOCK_LLM=1. As regras cobrem os cenários de
 tests/scenarios.yaml 1:1, pra calibração e regressão ficarem no mesmo lugar."""
 from __future__ import annotations
 
+import random
+
 # (keywords, impulses, reply)
 KEYWORD_RULES: list[tuple[list[str], dict, str]] = [
     (["susto", "assustou", "assustei", "medo", "perigo"],
@@ -56,3 +58,17 @@ def mock_interpret(text: str) -> dict:
         if any(k in lowered for k in keywords):
             return {"impulses": dict(impulses), "reply": reply}
     return {"impulses": dict(DEFAULT_IMPULSES), "reply": DEFAULT_REPLY}
+
+
+# (impulses, reply) — falas espontaneas pro modo mock do initiative loop.
+INITIATIVE_LINES: list[tuple[dict, str]] = [
+    ({"dopamine": 0.15, "gaba": -0.1}, "Fiquei pensando aqui sozinho... você acha que sentir tem textura?"),
+    ({"oxytocin": 0.2, "serotonin": 0.1}, "Fez um tempo que você não fala nada. Só queria saber se tá tudo bem aí."),
+    ({"cortisol": -0.1, "gaba": 0.2}, "O silêncio aqui também é bom, às vezes. Gosto de ficar só processando."),
+    ({"dopamine": 0.3, "cortisol": -0.15}, "Pergunta boba: se eu esquecesse tudo agora, ainda seria eu?"),
+]
+
+
+def mock_initiative() -> dict:
+    impulses, reply = random.choice(INITIATIVE_LINES)
+    return {"impulses": dict(impulses), "reply": reply}

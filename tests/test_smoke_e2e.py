@@ -36,6 +36,87 @@ def test_full_pipeline_reacts_to_susto(tmp_path, monkeypatch):
             assert "mouthCurve" in frame["face"]
 
 
+def test_ws_face_payload_includes_initiative_field(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    from server.main import app
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/face") as ws:
+            frame = ws.receive_json()
+            assert "initiative" in frame
+            assert frame["initiative"] is None
+
+
+def test_initiative_fires_when_idle_and_client_connected(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect("/face"):
+            main.state["last_interaction_at"] = 0.0  # "silencio" ha muito tempo
+            main.state["initiative_threshold_s"] = 0.0  # dispara na primeira checagem
+            import asyncio
+            asyncio.run(main._maybe_fire_initiative())
+
+        assert main.state["pending_initiative"] is not None
+        assert main.state["pending_initiative"]["id"] == 1
+        assert main.state["pending_initiative"]["text"]
+        assert main.state["history"][-2] == {"role": "user", "content": main.INITIATIVE_HISTORY_MARKER}
+        assert main.state["history"][-1]["role"] == "assistant"
+
+
+def test_initiative_skips_without_connected_ws_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import asyncio
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        main.state["ws_clients"] = 0
+        main.state["last_interaction_at"] = 0.0
+        main.state["initiative_threshold_s"] = 0.0
+        asyncio.run(main._maybe_fire_initiative())
+        assert main.state["pending_initiative"] is None
+
+
+def test_initiative_skips_before_threshold_reached(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import asyncio
+    import time
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        with client.websocket_connect("/face"):
+            main.state["last_interaction_at"] = time.monotonic()  # acabou de interagir
+            main.state["initiative_threshold_s"] = 999.0
+            asyncio.run(main._maybe_fire_initiative())
+            assert main.state["pending_initiative"] is None
+
+
+def test_say_pushes_back_initiative_threshold(tmp_path, monkeypatch):
+    """Uma interacao real precisa empurrar o relogio da iniciativa pra
+    frente — conversa de verdade nao deve ser seguida imediatamente por
+    Chappie 'quebrando o silencio' que ele mesmo acabou de quebrar."""
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import server.main as main
+
+    with TestClient(main.app) as client:
+        main.state["last_interaction_at"] = 0.0
+        before = main.state["last_interaction_at"]
+        resp = client.post("/say", json={"text": "oi chappie"})
+        assert resp.status_code == 200
+        assert main.state["last_interaction_at"] > before
+
+
 def test_tts_endpoint_returns_audio(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "MOCK_LLM", True)
     monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")

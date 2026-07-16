@@ -28,9 +28,13 @@ DECAY = {
     "adrenaline": 0.14, "endorphins": 0.08, "testosterone": 0.06, "gaba": 0.08,
 }
 
+# Paleta ciano/turquesa "Ekko" (pedido do Jack, 16/07): familia neon
+# ciano/magenta em vez do arco-iris quente original — mantem 8 tons
+# distintos (o dominante ainda precisa ser identificavel por cor), so
+# realinhados pra ler como uma unica identidade cyberpunk coesa.
 EMOTION_COLORS = {
-    "happiness": "#ffb545", "excitement": "#ffd23e", "affection": "#ff7ab8", "calm": "#5fd4c4",
-    "anger": "#ff4b2e", "fear": "#b48cff", "sadness": "#5c8fd6", "curiosity": "#7ee0ff",
+    "happiness": "#7cf2c4", "excitement": "#4defff", "affection": "#ff5ec4", "calm": "#2fd9cc",
+    "anger": "#ff3b5c", "fear": "#8f6bff", "sadness": "#4c8cff", "curiosity": "#00e5ff",
 }
 
 PT = {

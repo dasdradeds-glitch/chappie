@@ -11,10 +11,14 @@ const PT = {
   anger: "raiva", fear: "medo", sadness: "tristeza", curiosity: "curiosidade",
 };
 const CHEMS = ["dopamine", "serotonin", "oxytocin", "cortisol", "adrenaline", "endorphins", "testosterone", "gaba"];
+// Paleta ciano/turquesa "Ekko" (pedido do Jack 16/07) — tem que casar com
+// EMOTION_COLORS de server/engine.py (a cor do rosto vem de la; isto aqui e
+// so pro medidor lateral e pro painel neuroquimico, que sao client-side).
 const EMOTION_COLORS = {
-  happiness: "#ffb545", excitement: "#ffd23e", affection: "#ff7ab8", calm: "#5fd4c4",
-  anger: "#ff4b2e", fear: "#b48cff", sadness: "#5c8fd6", curiosity: "#7ee0ff",
+  happiness: "#7cf2c4", excitement: "#4defff", affection: "#ff5ec4", calm: "#2fd9cc",
+  anger: "#ff3b5c", fear: "#8f6bff", sadness: "#4c8cff", curiosity: "#00e5ff",
 };
+const EMOTION_ORDER = ["happiness", "excitement", "affection", "calm", "anger", "fear", "sadness", "curiosity"];
 
 const el = {
   faceWrap: document.getElementById("faceWrap"),
@@ -33,6 +37,7 @@ const el = {
   micBtn: document.getElementById("micBtn"),
   fallbackInput: document.getElementById("fallbackInput"),
   errorBanner: document.getElementById("errorBanner"),
+  emoMeter: document.getElementById("emoMeter"),
 };
 
 let latest = null;
@@ -54,6 +59,11 @@ let lipSyncRAF = null;
 // de erro transiente de conexao WS, isso NAO deve ser limpo a cada frame
 // pintado (o WS manda ~20 frames/s; sem essa flag o erro pisca e some).
 let unhealthy = false;
+// Iniciativa (pedido do Jack 16/07): comeca undefined pra so adotar o id ja
+// pendente no primeiro frame (sem falar retroativo em reload/reconexao) —
+// so fala quando o id MUDA depois disso.
+let lastInitiativeId;
+let wasSpiking = false;
 
 // ---------- WS ----------
 function connectWs() {
@@ -106,6 +116,27 @@ function paintFace(state) {
   el.emotionLabel.style.color = color;
 
   if (el.neuroPanel.dataset.open === "1") paintNeuro(state);
+  paintEmoMeter(state);
+
+  // flicker cyberpunk numa borda de subida de intensidade forte, nao continuo
+  const isSpiking = intensity > 0.82;
+  if (isSpiking && !wasSpiking) {
+    el.faceWrap.classList.remove("spike");
+    void el.faceWrap.offsetWidth; // forca reflow pra reiniciar a animacao
+    el.faceWrap.classList.add("spike");
+  }
+  wasSpiking = isSpiking;
+
+  // fala espontanea (iniciativa): so dispara em MUDANCA de id, nunca no
+  // primeiro frame apos boot/reconexao (adota o id pendente em silencio).
+  if (state.initiative) {
+    if (lastInitiativeId === undefined) {
+      lastInitiativeId = state.initiative.id;
+    } else if (state.initiative.id !== lastInitiativeId) {
+      lastInitiativeId = state.initiative.id;
+      speak(state.initiative.text);
+    }
+  }
 }
 
 function paintBrow(elm, face, color, intensity, side) {
@@ -126,6 +157,40 @@ function paintMouth(color) {
   el.mouthPath.setAttribute("stroke-width", String(strokeWidth));
   el.mouthPath.style.filter = mouthGlowFilter(mouthEnergy, color);
 }
+
+// ---------- medidor lateral (visual-first, tipo equalizador do Winamp) ----------
+function buildEmoMeter() {
+  el.emoMeter.innerHTML = "";
+  for (const key of EMOTION_ORDER) {
+    const wrap = document.createElement("div");
+    wrap.className = "emo-bar-wrap";
+    const bar = document.createElement("div");
+    bar.className = "emo-bar";
+    bar.dataset.emotion = key;
+    const label = document.createElement("span");
+    label.className = "emo-bar-label";
+    label.textContent = PT[key];
+    wrap.appendChild(bar);
+    wrap.appendChild(label);
+    el.emoMeter.appendChild(wrap);
+  }
+}
+buildEmoMeter();
+
+function paintEmoMeter(state) {
+  for (const key of EMOTION_ORDER) {
+    const bar = el.emoMeter.querySelector(`.emo-bar[data-emotion="${key}"]`);
+    if (!bar) continue;
+    const v = state.emotions[key] || 0;
+    bar.style.height = `${8 + v * 92}%`;
+    bar.style.background = EMOTION_COLORS[key];
+    bar.style.boxShadow = v > 0.35 ? `0 0 ${6 + v * 14}px ${EMOTION_COLORS[key]}` : "none";
+  }
+}
+
+el.emoMeter.addEventListener("click", () => {
+  el.emoMeter.classList.toggle("open");
+});
 
 // ---------- painel neuroquímico ----------
 function neuroRow(label, value, color) {

@@ -20,10 +20,21 @@
 
   #bg {
     position: absolute; inset: 0; pointer-events: none;
-    background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--emotion-color, #ffb545) 6%, transparent) 0%, transparent 55%);
+    background: radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--emotion-color, #2fd9cc) 6%, transparent) 0%, transparent 55%);
   }
 
   #faceWrap { position: absolute; inset: 0; transition: transform .12s linear; }
+
+  /* pico emocional forte (intensity alta) = flicker cyberpunk rapido, nao
+     um efeito continuo — so uma piscada na borda de subida */
+  @keyframes glitchFlash {
+    0%, 100% { filter: none; transform: translateX(0); }
+    20% { filter: hue-rotate(15deg) brightness(1.35); transform: translateX(-2px); }
+    40% { filter: hue-rotate(-12deg) brightness(1.1); transform: translateX(2px); }
+    60% { filter: none; transform: translateX(-1px); }
+    80% { filter: brightness(1.2); transform: translateX(1px); }
+  }
+  #faceWrap.spike { animation: glitchFlash .22s steps(2, end); }
   #browEyeRow { position: absolute; left: 0; right: 0; top: 48%; transform: translateY(-50%); transition: top .4s ease; }
   #browEyeRow.speaking { top: 44%; }
   #browsRow { display: flex; justify-content: center; }
@@ -65,14 +76,14 @@
     background: #0a0f16; border: 2px solid #26364a; display: flex;
     align-items: center; justify-content: center; transition: background .3s, border-color .3s;
   }
-  #micBtn.on { background: var(--emotion-color, #ffb545); border-color: var(--emotion-color, #ffb545); }
+  #micBtn.on { background: var(--emotion-color, #2fd9cc); border-color: var(--emotion-color, #2fd9cc); }
   #micBtn svg { stroke: #5f7d99; }
   #micBtn.on svg { stroke: #000; }
 
   /* "ouvindo" de verdade agora (reconhecimento ativo, nao so mic ligado) */
   @keyframes micPulse {
-    0%, 100% { box-shadow: 0 0 14px var(--emotion-color, #ffb545); }
-    50% { box-shadow: 0 0 30px var(--emotion-color, #ffb545); }
+    0%, 100% { box-shadow: 0 0 14px var(--emotion-color, #2fd9cc); }
+    50% { box-shadow: 0 0 30px var(--emotion-color, #2fd9cc); }
   }
   #micBtn.on.listening { animation: micPulse 1s ease-in-out infinite; }
 
@@ -85,9 +96,31 @@
     position: absolute; bottom: 12vh; left: 0; right: 0; text-align: center;
     font-size: 12px; color: #ff4b2e; display: none; padding: 0 6vw;
   }
+
+  /* Medidor de emocoes visual-first (pedido do Jack 16/07): barras tipo
+     equalizador do Winamp, sempre visiveis, coladas na lateral esquerda.
+     Toque/clique revela os nomes (writing-mode vertical, cabe no espaco
+     estreito sem precisar de scroll horizontal). */
+  #emoMeter {
+    position: absolute; left: 2.5vw; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: flex-end; gap: 5px; height: 22vh; min-height: 130px;
+    cursor: pointer; z-index: 5; padding: 6px; touch-action: manipulation;
+  }
+  .emo-bar-wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .emo-bar {
+    width: 6px; min-height: 4px; border-radius: 3px; background: #1c2733;
+    transition: height .18s ease, background .3s ease, box-shadow .3s ease;
+  }
+  .emo-bar-label {
+    writing-mode: vertical-rl; text-orientation: mixed; font-size: 8px; letter-spacing: 1px;
+    margin-top: 6px; opacity: 0; transition: opacity .2s ease; white-space: nowrap; max-height: 90px;
+  }
+  #emoMeter.open .emo-bar-label { opacity: .75; }
 </style>
 
 <div id="bg"></div>
+
+<div id="emoMeter" aria-label="Medidor de emoções — toque pra ver os nomes"></div>
 
 <div id="faceWrap">
   <div id="browEyeRow">
