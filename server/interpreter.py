@@ -5,10 +5,13 @@ e qualquer outra falha caem no mesmo fallback ("Interferência no sinal")."""
 from __future__ import annotations
 
 import json
+import logging
 import re
 
 from . import config, persona
 from .engine import CHEMS
+
+logger = logging.getLogger("chappie")
 
 FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
 FALLBACK = {"impulses": {}, "reply": "Interferência no sinal."}
@@ -82,6 +85,12 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
             messages=build_messages(history, text),
             timeout=15.0,
         )
+    except Exception:
+        logger.exception("chamada a API da Anthropic falhou (model=%s)", config.MODEL)
+        return dict(FALLBACK)
+
+    raw = None
+    try:
         raw = "".join(
             block.text for block in resp.content
             if getattr(block, "type", None) == "text"
@@ -89,4 +98,5 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
         parsed = json.loads(clean_json_text(raw))
         return validate_parsed(parsed)
     except Exception:
+        logger.exception("parse da resposta do Claude falhou | raw=%r", raw)
         return dict(FALLBACK)
