@@ -100,10 +100,15 @@
   /* Medidor de emocoes visual-first (pedido do Jack 16/07): barras tipo
      equalizador do Winamp, sempre visiveis, coladas na lateral esquerda.
      Toque/clique revela os nomes (writing-mode vertical, cabe no espaco
-     estreito sem precisar de scroll horizontal). */
+     estreito sem precisar de scroll horizontal). Ancorado no canto
+     superior (nao mais centralizado verticalmente) — em telas estreitas de
+     celular os olhos ocupam quase toda a largura e o brilho deles vaza bem
+     alem da propria caixa, entao um medidor "no meio" acaba na frente do
+     olho (bug real reportado 16/07, reproduzido em viewport 412x846). O
+     topo da tela fica livre do rosto (browEyeRow comeca la pelos ~36vh).*/
   #emoMeter {
-    position: absolute; left: 2.5vw; top: 50%; transform: translateY(-50%);
-    display: flex; align-items: flex-end; gap: 5px; height: 22vh; min-height: 130px;
+    position: absolute; left: 2.5vw; top: 8vh;
+    display: flex; align-items: flex-end; gap: 5px; height: 16vh; min-height: 90px;
     cursor: pointer; z-index: 5; padding: 6px; touch-action: manipulation;
   }
   .emo-bar-wrap { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
