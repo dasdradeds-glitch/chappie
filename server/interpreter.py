@@ -11,6 +11,7 @@ sem depender do modelo obedecer uma instrução de texto solta no prompt."""
 from __future__ import annotations
 
 import logging
+import time
 
 from . import config, persona
 from .engine import CHEMS
@@ -104,6 +105,7 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
 
     try:
         client = _get_client()
+        t0 = time.monotonic()
         resp = await client.messages.create(
             model=config.MODEL,
             max_tokens=1024,
@@ -113,6 +115,7 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
             tool_choice={"type": "tool", "name": "emit_response"},
             timeout=15.0,
         )
+        logger.info("latencia: chamada Anthropic (interpret) levou %.0fms", (time.monotonic() - t0) * 1000)
     except Exception:
         logger.exception("chamada a API da Anthropic falhou (model=%s)", config.MODEL)
         return dict(FALLBACK)

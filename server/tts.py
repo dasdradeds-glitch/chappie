@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import edge_tts
 
@@ -68,11 +69,14 @@ async def synthesize(text: str) -> bytes | None:
     if not text or not text.strip():
         return None
 
+    t_start = time.monotonic()
     try:
         raw = await asyncio.wait_for(_edge_tts_bytes(text), timeout=_EDGE_TTS_TIMEOUT_S)
     except Exception:
         logger.exception("edge-tts falhou (voice=%s)", config.TTS_VOICE)
         return None
+    t_edge = time.monotonic()
+    logger.info("latencia: edge-tts levou %.0fms", (t_edge - t_start) * 1000)
     if not raw:
         logger.warning("edge-tts nao retornou audio (voice=%s, text=%r)", config.TTS_VOICE, text[:80])
         return None
@@ -82,4 +86,9 @@ async def synthesize(text: str) -> bytes | None:
     except Exception:
         logger.exception("pos-processamento ffmpeg falhou")
         return None
+    t_ffmpeg = time.monotonic()
+    logger.info(
+        "latencia: ffmpeg levou %.0fms | total /tts %.0fms",
+        (t_ffmpeg - t_edge) * 1000, (t_ffmpeg - t_start) * 1000,
+    )
     return processed
