@@ -3,16 +3,6 @@ import pytest
 from server import interpreter
 
 
-def test_clean_json_text_strips_fences():
-    raw = "```json\n{\"a\": 1}\n```"
-    assert interpreter.clean_json_text(raw) == '{"a": 1}'
-
-
-def test_clean_json_text_passes_through_plain_json():
-    raw = '{"a": 1}'
-    assert interpreter.clean_json_text(raw) == '{"a": 1}'
-
-
 def test_validate_parsed_happy_path():
     parsed = {"impulses": {"dopamine": 0.3, "cortisol": -0.2}, "reply": " oi "}
     result = interpreter.validate_parsed(parsed)
@@ -92,16 +82,26 @@ async def test_interpret_timeout_falls_back(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_interpret_malformed_json_falls_back(monkeypatch):
+async def test_interpret_ignores_natural_language_reply_without_tool_use(monkeypatch):
+    """Regressao do bug real encontrado 16/07 no Note 8 (2x reproduzido,
+    log com stop_reason/block_types em maos): o Claude as vezes responde
+    em portugues natural, no personagem, mesmo com tool_choice forcado
+    fica sujeito a variacao — se por algum motivo so vier ThinkingBlock +
+    TextBlock (sem tool_use), tem que cair no fallback, nao quebrar."""
     monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
     monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
 
-    class FakeBlock:
+    class FakeThinkingBlock:
+        type = "thinking"
+        thinking = "..."
+
+    class FakeTextBlock:
         type = "text"
-        text = "isso nao e json valido {{{"
+        text = "Tô sim, te escutando direitinho agora."
 
     class FakeResponse:
-        content = [FakeBlock()]
+        content = [FakeThinkingBlock(), FakeTextBlock()]
+        stop_reason = "end_turn"
 
     class FakeMessages:
         async def create(self, **kwargs):
@@ -116,16 +116,18 @@ async def test_interpret_malformed_json_falls_back(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_interpret_valid_response_with_fences(monkeypatch):
+async def test_interpret_valid_tool_use_response(monkeypatch):
     monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
     monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
 
-    class FakeBlock:
-        type = "text"
-        text = '```json\n{"impulses": {"dopamine": 0.4}, "reply": "oi!"}\n```'
+    class FakeToolUseBlock:
+        type = "tool_use"
+        name = "emit_response"
+        input = {"impulses": {"dopamine": 0.4}, "reply": "oi!"}
 
     class FakeResponse:
-        content = [FakeBlock()]
+        content = [FakeToolUseBlock()]
+        stop_reason = "tool_use"
 
     class FakeMessages:
         async def create(self, **kwargs):
@@ -137,3 +139,37 @@ async def test_interpret_valid_response_with_fences(monkeypatch):
     monkeypatch.setattr(interpreter, "_get_client", lambda: FakeClient())
     result = await interpreter.interpret("oi", {"cortisol": 0.25}, [])
     assert result == {"impulses": {"dopamine": 0.4}, "reply": "oi!"}
+
+
+@pytest.mark.asyncio
+async def test_interpret_forces_tool_choice(monkeypatch):
+    """Trava o contrato: a chamada real tem que forcar tool_choice pro
+    emit_response, senao a gente volta a depender do modelo 'obedecer'
+    uma instrucao solta de texto (a causa raiz do bug real)."""
+    monkeypatch.setattr(interpreter.config, "MOCK_LLM", False)
+    monkeypatch.setattr(interpreter.config, "ANTHROPIC_API_KEY", "fake-key")
+
+    captured = {}
+
+    class FakeToolUseBlock:
+        type = "tool_use"
+        name = "emit_response"
+        input = {"impulses": {}, "reply": "oi"}
+
+    class FakeResponse:
+        content = [FakeToolUseBlock()]
+        stop_reason = "tool_use"
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        messages = FakeMessages()
+
+    monkeypatch.setattr(interpreter, "_get_client", lambda: FakeClient())
+    await interpreter.interpret("oi", {"cortisol": 0.25}, [])
+
+    assert captured["tool_choice"] == {"type": "tool", "name": "emit_response"}
+    assert captured["tools"][0]["name"] == "emit_response"

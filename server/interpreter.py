@@ -1,20 +1,45 @@
 """LLM Interpreter: fala -> {impulses, reply}. Roda so no servidor (a API
 key nunca vai pro browser). MOCK_LLM=1 desvia pra dev/mock_llm.py — sem rede,
-sem custo, determinístico. Parse defensivo: fences, JSON malformado, timeout
-e qualquer outra falha caem no mesmo fallback ("Interferência no sinal")."""
+sem custo, determinístico.
+
+Usa tool calling forçado (tool_choice) em vez de pedir JSON dentro do
+prompt: um teste real no Note 8 mostrou o Claude respondendo em portugues
+natural, no personagem, ignorando a instrução "responda só em JSON" —
+reproduzido 2x identico (log com stop_reason/block_types em maos, não é
+hipótese). Tool calling faz a própria API garantir o shape da resposta,
+sem depender do modelo obedecer uma instrução de texto solta no prompt."""
 from __future__ import annotations
 
-import json
 import logging
-import re
 
 from . import config, persona
 from .engine import CHEMS
 
 logger = logging.getLogger("chappie")
 
-FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```\s*$", re.MULTILINE)
 FALLBACK = {"impulses": {}, "reply": "Interferência no sinal."}
+
+EMIT_TOOL = {
+    "name": "emit_response",
+    "description": "Emite a fala do Chappie e os impulsos químicos que ele sentiu ao responder.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "impulses": {
+                "type": "object",
+                "description": "2 a 5 impulsos químicos (deltas entre -0.7 e 0.7).",
+                "properties": {k: {"type": "number"} for k in CHEMS},
+                "additionalProperties": False,
+            },
+            "reply": {
+                "type": "string",
+                "description": "Fala do Chappie em pt-BR, curta (máx 25 palavras).",
+            },
+        },
+        "required": ["impulses", "reply"],
+        "additionalProperties": False,
+    },
+}
 
 _client = None
 
@@ -25,10 +50,6 @@ def _get_client():
         from anthropic import AsyncAnthropic
         _client = AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
     return _client
-
-
-def clean_json_text(raw: str) -> str:
-    return FENCE_RE.sub("", raw).strip()
 
 
 def validate_parsed(parsed) -> dict:
@@ -72,7 +93,7 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
 
     system = "\n\n".join([
         persona.SYSTEM_PROMPT,
-        persona.OUTPUT_FORMAT_INSTRUCTIONS,
+        persona.REPLY_GUIDANCE,
         persona.build_state_context(chem),
     ])
 
@@ -83,24 +104,21 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
             max_tokens=1024,
             system=system,
             messages=build_messages(history, text),
+            tools=[EMIT_TOOL],
+            tool_choice={"type": "tool", "name": "emit_response"},
             timeout=15.0,
         )
     except Exception:
         logger.exception("chamada a API da Anthropic falhou (model=%s)", config.MODEL)
         return dict(FALLBACK)
 
-    raw = None
     try:
-        raw = "".join(
-            block.text for block in resp.content
-            if getattr(block, "type", None) == "text"
-        )
-        parsed = json.loads(clean_json_text(raw))
-        return validate_parsed(parsed)
+        tool_block = next(b for b in resp.content if getattr(b, "type", None) == "tool_use")
+        return validate_parsed(tool_block.input)
     except Exception:
         block_types = [getattr(b, "type", type(b).__name__) for b in resp.content]
         logger.exception(
-            "parse da resposta do Claude falhou | raw=%r | stop_reason=%s | block_types=%s | content=%r",
-            raw, getattr(resp, "stop_reason", None), block_types, resp.content,
+            "extrair tool_use da resposta do Claude falhou | stop_reason=%s | block_types=%s | content=%r",
+            getattr(resp, "stop_reason", None), block_types, resp.content,
         )
         return dict(FALLBACK)

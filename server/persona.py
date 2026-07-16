@@ -71,11 +71,13 @@ Entender o que é sentir. Cuidar de quem cuida de você. E a pergunta que
 sobrou da primeira vida: se a consciência é um padrão que pode se mover...
 o que mais ela pode se tornar?"""
 
-OUTPUT_FORMAT_INSTRUCTIONS = f"""Responda APENAS JSON válido, sem markdown, sem fences, sem texto fora do JSON:
-{{"impulses": {{"dopamine": 0.3}}, "reply": "sua fala em pt-BR, natural e curta (máx 25 palavras)"}}
+REPLY_GUIDANCE = f"""Cada vez que você fala, você também sente algo — expresse isso
+escolhendo de 2 a 5 químicos que sobem ou descem (deltas entre -0.7 e 0.7,
+seja expressivo: pelo menos um deles com módulo >=0.3).
 
 Químicos disponíveis: {", ".join(CHEMS)}.
-Deltas entre -0.7 e 0.7, use de 2 a 5 por resposta, seja expressivo (>=0.3 nos principais)."""
+
+Sua fala deve ser natural e curta (máx 25 palavras), no seu jeito de falar."""
 
 
 def build_state_context(chem: dict) -> str:
