@@ -24,6 +24,15 @@ logger = logging.getLogger("chappie")
 # personagem, igual ao SYSTEM_PROMPT). Camadas: principal + quinta grave
 # (profundidade/metalico) + quinta aguda (calor melodico) + oitava aguda
 # bem sutil (brilho), mixadas e amarradas com chorus leve.
+#
+# loudnorm no final: o amix de 4 camadas com normalize=0 saia baixo demais
+# na pratica (medido no Note 8 real, 16/07 — mean_volume caia de -20.7dB
+# pra -28.3dB, ~7-8dB mais fraco que a voz crua do edge-tts, mesmo com
+# alimiter). Um alimiter sozinho so evita estourar, nao compensa mix baixo.
+# loudnorm normaliza pra um alvo de loudness de verdade (-14 LUFS), robusto
+# a variacao natural de frase-a-frase — nao e um multiplicador fixo que
+# funcionaria hoje e desafinaria amanha. alimiter continua so como rede de
+# seguranca contra picos do loudnorm em modo single-pass.
 _VOICE_FILTER = (
     "[0:a]volume=1.0[main];"
     "[0:a]rubberband=pitch=0.667,volume=0.28[fifth_low];"
@@ -31,7 +40,8 @@ _VOICE_FILTER = (
     "[0:a]rubberband=pitch=2.0,volume=0.08[oct_high];"
     "[main][fifth_low][fifth_high][oct_high]amix=inputs=4:duration=first:dropout_transition=0:normalize=0,"
     "chorus=0.4:0.8:45:0.25:0.2:1.5,"
-    "alimiter=limit=0.95"
+    "loudnorm=I=-14:TP=-1.0:LRA=11,"
+    "alimiter=limit=0.97"
 )
 
 _EDGE_TTS_TIMEOUT_S = 15.0
