@@ -1,0 +1,50 @@
+# Cenarios de calibracao (HANDOFF v2 §2.8): frase -> emocao dominante
+# esperada + intensidade minima. Validados contra MOCK_LLM (dev/mock_llm.py)
+# em tests/test_scenarios.py — cobre as 8 emocoes, algumas com 2 frases
+# diferentes pra confirmar que o keyword matching pega variacoes naturais.
+scenarios:
+  - text: "que susto, tem alguem na porta!"
+    expected_dominant: fear
+    min_intensity: 0.55
+  - text: "tenho medo do escuro"
+    expected_dominant: fear
+    min_intensity: 0.55
+  - text: "para de me provocar assim"
+    expected_dominant: anger
+    min_intensity: 0.35
+  - text: "para de ser idiota comigo"
+    expected_dominant: anger
+    min_intensity: 0.35
+  - text: "voce mentiu pra mim"
+    expected_dominant: anger
+    min_intensity: 0.35
+  - text: "que carinho, obrigado"
+    expected_dominant: affection
+    min_intensity: 0.8
+  - text: "eu gosto de voce"
+    expected_dominant: affection
+    min_intensity: 0.8
+  - text: "eu prometo que volto amanha"
+    expected_dominant: affection
+    min_intensity: 0.55
+  - text: "consegui terminar o projeto!"
+    expected_dominant: happiness
+    min_intensity: 0.7
+  - text: "meu cachorro morreu ontem"
+    expected_dominant: sadness
+    min_intensity: 0.25
+  - text: "estou muito triste hoje"
+    expected_dominant: sadness
+    min_intensity: 0.25
+  - text: "fica calmo, respira fundo"
+    expected_dominant: calm
+    min_intensity: 0.6
+  - text: "por que o ceu e azul?"
+    expected_dominant: curiosity
+    min_intensity: 0.45
+  - text: "isso e incrivel, uau!"
+    expected_dominant: excitement
+    min_intensity: 0.5
+  - text: "oi, tudo bem?"
+    expected_dominant: happiness
+    min_intensity: 0.4
