@@ -80,7 +80,7 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
         client = _get_client()
         resp = await client.messages.create(
             model=config.MODEL,
-            max_tokens=300,
+            max_tokens=1024,
             system=system,
             messages=build_messages(history, text),
             timeout=15.0,
@@ -98,5 +98,9 @@ async def interpret(text: str, chem: dict, history: list[dict]) -> dict:
         parsed = json.loads(clean_json_text(raw))
         return validate_parsed(parsed)
     except Exception:
-        logger.exception("parse da resposta do Claude falhou | raw=%r", raw)
+        block_types = [getattr(b, "type", type(b).__name__) for b in resp.content]
+        logger.exception(
+            "parse da resposta do Claude falhou | raw=%r | stop_reason=%s | block_types=%s | content=%r",
+            raw, getattr(resp, "stop_reason", None), block_types, resp.content,
+        )
         return dict(FALLBACK)
