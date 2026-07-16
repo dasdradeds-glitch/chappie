@@ -55,7 +55,8 @@ elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   printf 'ANTHROPIC_API_KEY=%s\nPORT=%s\n' "$ANTHROPIC_API_KEY" "$PORT" > "$ENV_FILE"
   echo "  Gravado em $ENV_FILE (via variavel de ambiente ANTHROPIC_API_KEY)."
 elif [ -t 0 ]; then
-  read -rp "  Cola a ANTHROPIC_API_KEY (sk-ant-...): " API_KEY
+  read -rsp "  Cola a ANTHROPIC_API_KEY (sk-ant-..., nao aparece na tela): " API_KEY
+  echo
   printf 'ANTHROPIC_API_KEY=%s\nPORT=%s\n' "$API_KEY" "$PORT" > "$ENV_FILE"
   echo "  Gravado em $ENV_FILE"
 else
@@ -78,8 +79,25 @@ else
 exec logger -t chappie
 EOF
   chmod +x "$SERVICE_DIR/log/run"
-  sv-enable chappie 2>/dev/null || true
-  sv restart chappie 2>/dev/null || sv start chappie 2>/dev/null || true
+
+  SV_OK=1
+  sv-enable chappie >/dev/null 2>&1 || SV_OK=0
+  if [ "$SV_OK" = "1" ]; then
+    { sv restart chappie || sv start chappie; } >/dev/null 2>&1 || SV_OK=0
+  fi
+
+  if [ "$SV_OK" = "1" ] && sv status chappie >/dev/null 2>&1; then
+    echo "  Servico registrado e no ar (confira com: sv status chappie)."
+  else
+    echo "  AVISO: o supervisor de servicos do Termux ainda nao esta ativo"
+    echo "  nesta sessao (normal logo apos instalar termux-services agora)."
+    echo "  O servico FOI registrado, mas so inicia sozinho depois que voce"
+    echo "  fechar o Termux por completo (nao so minimizar) e abrir de novo."
+    echo "  Depois disso, roda: sv-enable chappie && sv restart chappie"
+    echo "  Enquanto isso, pra testar agora sem esperar, roda na mao:"
+    echo "    cd $INSTALL_DIR && set -a && . ./.env && set +a && \\"
+    echo "    .venv/bin/python -m uvicorn server.main:app --host 127.0.0.1 --port $PORT"
+  fi
 fi
 
 log "6/7 Wake lock + bateria"
