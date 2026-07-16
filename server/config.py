@@ -7,7 +7,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = os.environ.get("CHAPPIE_MODEL", "claude-sonnet-5")
+MODEL = os.environ.get("CHAPPIE_MODEL", "claude-haiku-4-5")
 PORT = int(os.environ.get("PORT", "8000"))
 HOST = os.environ.get("HOST", "0.0.0.0")
 MOCK_LLM = os.environ.get("MOCK_LLM", "0") == "1"
