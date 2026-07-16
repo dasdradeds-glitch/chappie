@@ -31,6 +31,11 @@
   #eyesRow { display: flex; justify-content: center; gap: 13vw; }
   .eye { border-radius: 3.5vw; transition: height .16s cubic-bezier(.34,1.56,.64,1); }
 
+  /* "pensando": olhos oscilam sutil enquanto espera o Claude responder
+     (HANDOFF §8, mitigacao de latencia percebida) */
+  @keyframes eyeThinking { 0%, 100% { transform: scaleY(1); } 50% { transform: scaleY(.72); } }
+  #eyesRow.thinking .eye { animation: eyeThinking .6s ease-in-out infinite; }
+
   #mouthWrap { position: absolute; top: 67%; left: 50%; transform: translateX(-50%); transition: width .35s ease; }
   #mouthSvg { width: 100%; display: block; overflow: visible; }
   #mouthPath { stroke-linecap: round; stroke-linejoin: round; }
@@ -63,6 +68,13 @@
   #micBtn.on { background: var(--emotion-color, #ffb545); border-color: var(--emotion-color, #ffb545); }
   #micBtn svg { stroke: #5f7d99; }
   #micBtn.on svg { stroke: #000; }
+
+  /* "ouvindo" de verdade agora (reconhecimento ativo, nao so mic ligado) */
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 14px var(--emotion-color, #ffb545); }
+    50% { box-shadow: 0 0 30px var(--emotion-color, #ffb545); }
+  }
+  #micBtn.on.listening { animation: micPulse 1s ease-in-out infinite; }
 
   #fallbackInput {
     display: none; background: #070b10; border: 1px solid #1e2c3a; border-radius: 8px;

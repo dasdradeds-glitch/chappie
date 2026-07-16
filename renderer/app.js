@@ -23,6 +23,7 @@ const el = {
   browR: document.getElementById("browR"),
   browL: document.getElementById("browL"),
   browsRow: document.getElementById("browsRow"),
+  eyesRow: document.getElementById("eyesRow"),
   eyeL: document.getElementById("eyeL"),
   eyeR: document.getElementById("eyeR"),
   mouthWrap: document.getElementById("mouthWrap"),
@@ -197,6 +198,10 @@ function stopRecog() {
   try { recognizer?.stop(); } catch (e) { /* noop */ }
 }
 
+function setListening(on) {
+  el.micBtn.classList.toggle("listening", on);
+}
+
 function startRecog() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { showFallback(true); return; }
@@ -204,6 +209,7 @@ function startRecog() {
     if (recognizer) { try { recognizer.abort(); } catch (e) { /* noop */ } }
     const r = new SR();
     r.lang = "pt-BR"; r.continuous = true; r.interimResults = false;
+    r.onstart = () => setListening(true);
     r.onresult = (ev) => {
       const last = ev.results[ev.results.length - 1];
       if (last.isFinal) {
@@ -212,9 +218,11 @@ function startRecog() {
       }
     };
     r.onend = () => {
+      setListening(false);
       if (micOn && !speaking) setTimeout(() => { if (micOn && !speaking) startRecog(); }, 300);
     };
     r.onerror = (ev) => {
+      setListening(false);
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
         micOn = false;
         el.micBtn.classList.remove("on");
@@ -232,8 +240,14 @@ function showFallback(show) {
   el.fallbackInput.style.display = show ? "block" : "none";
 }
 
+function setThinking(on) {
+  el.busyDots.style.display = on ? "block" : "none";
+  el.eyesRow.classList.toggle("thinking", on);
+}
+
 async function sendSay(text) {
-  el.busyDots.style.display = "block";
+  setListening(false);
+  setThinking(true);
   try {
     const res = await fetch("/say", {
       method: "POST",
@@ -245,7 +259,7 @@ async function sendSay(text) {
   } catch (e) {
     speak("Interferência no sinal.");
   } finally {
-    el.busyDots.style.display = "none";
+    setThinking(false);
   }
 }
 
