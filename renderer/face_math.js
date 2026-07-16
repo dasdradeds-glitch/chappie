@@ -4,9 +4,8 @@
 // nem emocoes (contrato do HANDOFF §4/§3: "o renderer nao conhece quimicos").
 //
 // mouthOpenFrac (0..1) e a UNICA coisa que NAO vem do servidor: e lip-sync
-// local, dirigido pelo onboundary do speechSynthesis do navegador (ver
-// docs/HANDOFF §7 fase 1) — combinado aqui com o mouthCurve emocional que
-// o servidor manda.
+// local por amplitude real do audio (WebAudio AnalyserNode em app.js) —
+// combinado aqui com o mouthCurve emocional que o servidor manda.
 
 export function mouthVisual(mouthCurve, mouthOpenFrac = 0) {
   const openPx = mouthOpenFrac * 42;
@@ -51,14 +50,4 @@ export function browGlow(intensity, color) {
 
 export function mouthGlowFilter(mouthOpenFrac, color) {
   return `drop-shadow(0 0 ${8 + mouthOpenFrac * 22}px ${color})`;
-}
-
-// Lip-sync local (client-side): energia por palavra falada, decaimento
-// contínuo. Porte literal do mouthRef do v8 — nao mexe em quimicos/emocao.
-export function decayMouthEnergy(current, dtSeconds, ratePerSecond = 5.5) {
-  return Math.max(0, current - dtSeconds * ratePerSecond);
-}
-
-export function wordEnergy(word) {
-  return Math.min(1, 0.55 + (word ? word.length : 0) * 0.08);
 }

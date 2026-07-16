@@ -4,7 +4,6 @@
 import {
   mouthVisual, browTransform, browRowGapVw, browRowMarginBottomVh,
   postureTransform, eyeGlow, browGlow, mouthGlowFilter,
-  decayMouthEnergy, wordEnergy,
 } from "./face_math.js";
 
 const PT = {
@@ -43,6 +42,14 @@ let micOn = false;
 let speaking = false;
 let recognizer = null;
 let wsReconnectDelay = 1000;
+// Audio real (TTS server-side + lip-sync por amplitude via AnalyserNode).
+// AudioContext so pode ser criado/retomado a partir de um gesto do usuario
+// (politica de autoplay do navegador) — por isso getAudioCtx() e chamado
+// nos handlers de clique/enter, nao aqui no top-level.
+let audioCtx = null;
+let analyser = null;
+let currentAudioSource = null;
+let lipSyncRAF = null;
 // Erro persistente de configuracao (ex: sem ANTHROPIC_API_KEY) — diferente
 // de erro transiente de conexao WS, isso NAO deve ser limpo a cada frame
 // pintado (o WS manda ~20 frames/s; sem essa flag o erro pisca e some).
@@ -120,19 +127,6 @@ function paintMouth(color) {
   el.mouthPath.style.filter = mouthGlowFilter(mouthEnergy, color);
 }
 
-// Loop local so pro lip-sync (independente do 20Hz do servidor).
-let lastFrameT = performance.now();
-function lipSyncLoop(now) {
-  const dt = Math.min(0.1, (now - lastFrameT) / 1000);
-  lastFrameT = now;
-  if (mouthEnergy > 0 && latest) {
-    mouthEnergy = decayMouthEnergy(mouthEnergy, dt);
-    paintMouth(latest.color);
-  }
-  requestAnimationFrame(lipSyncLoop);
-}
-requestAnimationFrame(lipSyncLoop);
-
 // ---------- painel neuroquímico ----------
 function neuroRow(label, value, color) {
   const row = document.createElement("div");
@@ -172,7 +166,81 @@ el.neuroPanel.addEventListener("click", () => {
 });
 
 // ---------- voz ----------
-function speak(text) {
+// AudioContext so pode nascer/retomar num gesto do usuario — chamado nos
+// handlers de clique do mic / enter do fallback, nunca aqui direto.
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// Voz real: /tts (edge-tts + pos-processo ffmpeg no servidor, timbre
+// "androide de cinema" aprovado pelo Jack 16/07). Lip-sync por amplitude
+// real do audio via AnalyserNode, nao mais por heuristica de palavra.
+async function speak(text) {
+  stopRecog();
+  try {
+    const res = await fetch("/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error(`tts respondeu ${res.status}`);
+    const arrayBuffer = await res.arrayBuffer();
+    await playAudioBuffer(arrayBuffer);
+  } catch (e) {
+    speakFallback(text);
+  }
+}
+
+async function playAudioBuffer(arrayBuffer) {
+  const ctx = getAudioCtx();
+  if (ctx.state === "suspended") { try { await ctx.resume(); } catch (e) { /* noop */ } }
+  const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+
+  if (!analyser) {
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.connect(ctx.destination);
+  }
+  const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  if (currentAudioSource) { try { currentAudioSource.stop(); } catch (e) { /* noop */ } }
+  const source = ctx.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(analyser);
+  currentAudioSource = source;
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      mouthEnergy = 0;
+      if (lipSyncRAF) cancelAnimationFrame(lipSyncRAF);
+      lipSyncRAF = null;
+      currentAudioSource = null;
+      if (micOn) startRecog();
+      resolve();
+    };
+    source.onended = finish;
+
+    function tick() {
+      analyser.getByteTimeDomainData(dataArray);
+      let sumSquares = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = (dataArray[i] - 128) / 128;
+        sumSquares += v * v;
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+      mouthEnergy = Math.min(1, rms * 4.5);
+      if (latest) paintMouth(latest.color);
+      lipSyncRAF = requestAnimationFrame(tick);
+    }
+    source.start();
+    tick();
+  });
+}
+
+// Fallback se /tts falhar (rede fora, ffmpeg quebrado): TTS do navegador,
+// pra nunca deixar o Chappie mudo.
+function speakFallback(text) {
   try {
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
@@ -180,17 +248,14 @@ function speak(text) {
     const br = voices.find((v) => v.lang && v.lang.toLowerCase().startsWith("pt"));
     if (br) u.voice = br;
     u.lang = "pt-BR"; u.rate = 1.02; u.pitch = 0.75;
-    u.onstart = () => { mouthEnergy = 1; stopRecog(); };
-    u.onboundary = (ev) => {
-      const word = text.slice(ev.charIndex).split(/\s/)[0] || "";
-      mouthEnergy = wordEnergy(word);
-    };
+    u.onstart = () => { mouthEnergy = 1; };
     const done = () => { mouthEnergy = 0; if (micOn) startRecog(); };
     u.onend = done;
     u.onerror = done;
     window.speechSynthesis.speak(u);
   } catch (e) {
     mouthEnergy = 0;
+    if (micOn) startRecog();
   }
 }
 
@@ -264,6 +329,7 @@ async function sendSay(text) {
 }
 
 el.micBtn.addEventListener("click", () => {
+  getAudioCtx(); // gesto do usuario: destrava o AudioContext pra tocar /tts depois
   micOn = !micOn;
   el.micBtn.classList.toggle("on", micOn);
   if (micOn) { showFallback(false); startRecog(); } else { stopRecog(); }
@@ -271,6 +337,7 @@ el.micBtn.addEventListener("click", () => {
 
 el.fallbackInput.addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && el.fallbackInput.value.trim()) {
+    getAudioCtx(); // gesto do usuario: destrava o AudioContext pra tocar /tts depois
     sendSay(el.fallbackInput.value.trim());
     el.fallbackInput.value = "";
   }

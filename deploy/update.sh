@@ -7,6 +7,10 @@ cd "$(dirname "$0")/.."
 echo "Atualizando Chappie..."
 git pull --ff-only
 
+if command -v pkg >/dev/null 2>&1 && ! command -v ffmpeg >/dev/null 2>&1; then
+  pkg install -y ffmpeg
+fi
+
 VENV_PY=".venv/bin/pip"
 [ -f "$VENV_PY" ] || VENV_PY=".venv/Scripts/pip"
 "$VENV_PY" install --quiet -r requirements.txt

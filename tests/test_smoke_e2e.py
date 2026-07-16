@@ -36,6 +36,40 @@ def test_full_pipeline_reacts_to_susto(tmp_path, monkeypatch):
             assert "mouthCurve" in frame["face"]
 
 
+def test_tts_endpoint_returns_audio(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import server.main as main
+
+    async def fake_synthesize(text):
+        return b"fake-mp3-bytes"
+
+    monkeypatch.setattr(main, "synthesize", fake_synthesize)
+
+    with TestClient(main.app) as client:
+        resp = client.post("/tts", json={"text": "oi"})
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "audio/mpeg"
+        assert resp.content == b"fake-mp3-bytes"
+
+
+def test_tts_endpoint_returns_502_when_synthesis_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "MOCK_LLM", True)
+    monkeypatch.setattr(config, "STATE_PATH", tmp_path / "state.json")
+
+    import server.main as main
+
+    async def fake_synthesize(text):
+        return None
+
+    monkeypatch.setattr(main, "synthesize", fake_synthesize)
+
+    with TestClient(main.app) as client:
+        resp = client.post("/tts", json={"text": "oi"})
+        assert resp.status_code == 502
+
+
 def test_health_reports_missing_api_key_when_not_mocked(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "MOCK_LLM", False)
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")

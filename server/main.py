@@ -11,13 +11,14 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config, persistence
 from .engine import Engine
 from .interpreter import interpret
 from .schemas import NeuroSnapshot, SayRequest, SayResponse
+from .tts import synthesize
 
 logger = logging.getLogger("chappie")
 
@@ -142,6 +143,14 @@ async def say(req: SayRequest):
     eng.start_speaking(word_count / 2.5 + 0.3)
 
     return SayResponse(reply=result["reply"], impulses=result["impulses"])
+
+
+@app.post("/tts")
+async def tts(req: SayRequest):
+    audio = await synthesize(req.text)
+    if audio is None:
+        raise HTTPException(status_code=502, detail="sintese de voz indisponivel")
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 @app.websocket("/face")

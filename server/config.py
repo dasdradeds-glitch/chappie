@@ -18,3 +18,10 @@ TICK_HZ = float(os.environ.get("CHAPPIE_TICK_HZ", "20"))
 HISTORY_MAX_TURNS = 8
 
 ADMIN_TOKEN = os.environ.get("CHAPPIE_ADMIN_TOKEN", "")
+
+# Voz (HANDOFF §7 fase 2): unica voz masculina pt-BR do Edge TTS e Antonio.
+# rate/pitch aqui sao so um leve ajuste de base — o timbre "androide de
+# cinema" de verdade vem do pos-processo ffmpeg em server/tts.py.
+TTS_VOICE = os.environ.get("CHAPPIE_TTS_VOICE", "pt-BR-AntonioNeural")
+TTS_RATE = os.environ.get("CHAPPIE_TTS_RATE", "-8%")
+TTS_PITCH = os.environ.get("CHAPPIE_TTS_PITCH", "-4Hz")

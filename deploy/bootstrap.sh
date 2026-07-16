@@ -27,7 +27,7 @@ if [ "$DRY_ANDROID" = "1" ]; then
   echo "  (--dry-android: pulando pkg install)"
 else
   pkg update -y
-  pkg install -y python git termux-services termux-api
+  pkg install -y python git termux-services termux-api ffmpeg
 fi
 
 log "2/7 Clonando/atualizando o repo em $INSTALL_DIR"

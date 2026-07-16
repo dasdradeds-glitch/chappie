@@ -9,8 +9,6 @@ import {
   eyeGlow,
   browGlow,
   mouthGlowFilter,
-  decayMouthEnergy,
-  wordEnergy,
 } from "../renderer/face_math.js";
 
 test("mouthVisual: curve positivo (felicidade) nao inverte o sinal (bug historico v7)", () => {
@@ -77,14 +75,4 @@ test("eyeGlow e browGlow crescem com a intensidade", () => {
 test("mouthGlowFilter monta um drop-shadow valido", () => {
   const f = mouthGlowFilter(0.5, "#ff0000");
   assert.match(f, /^drop-shadow\(0 0 \d+(\.\d+)?px #ff0000\)$/);
-});
-
-test("decayMouthEnergy: decai em direcao a zero e nunca fica negativo", () => {
-  assert.equal(decayMouthEnergy(1, 0.1, 5.5), 1 - 0.55);
-  assert.equal(decayMouthEnergy(0.1, 1, 5.5), 0); // clamp em zero
-});
-
-test("wordEnergy: palavras maiores geram mais energia, sempre clampado em 1", () => {
-  assert.ok(wordEnergy("oi") < wordEnergy("companheiro"));
-  assert.ok(wordEnergy("um-nome-gigantesco-de-verdade-mesmo-longo") <= 1);
 });

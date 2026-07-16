@@ -8,3 +8,4 @@ node_modules/
 state.json
 state.json.tmp
 .pytest_cache/
+scratch_voice/
